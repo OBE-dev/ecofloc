@@ -1,6 +1,0 @@
-# The gui python venv
-gui/venv
-gui/__pycache__
-gui/trash
-ecofloc-gpu/gpu_settings.conf
-ecofloc-cpu/cpu_settings.conf

@@ -1,4 +1,4 @@
-# <img src="gui/assets/images/ecofloc.png" width="70"/> EcoFloc: Energy Measuring System Tool for Linux
+# <img src="docs/assets/images/ecofloc.png" width="70"/> EcoFloc: Energy Measuring System Tool for Linux
 
 
 
@@ -12,9 +12,9 @@
 **EcoFloc** was developed by the R&D laboratory of **Technopôle Domolandes**[^1], with support from **Université de Pau et des Pays de l'Adour** and **Université de Toulouse**. These institutions play a key role in advancing research and innovation, contributing to technological progress and regional development in France.  
 
 <p align="center">
-  <img src="gui/assets/images/domolandes.png" width= "20%" />   
-  <img src="gui/assets/images/uppa.png" width="18%" >
-  <img src="gui/assets/images/capitole.jpg" width= "18%" />
+  <img src="docs/assets/images/domolandes.png" width= "20%" />   
+  <img src="docs/assets/images/uppa.png" width="18%" >
+  <img src="docs/assets/images/capitole.jpg" width= "18%" />
 </p>
 
 
