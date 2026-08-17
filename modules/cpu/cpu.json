@@ -1,0 +1,8 @@
+{
+"features": {
+"cpu_freq_tdp": 2800.0,
+"cpu_tdp": 28.0,
+"cpu_voltage_tdp": 1.5
+},
+"settings": {}
+}

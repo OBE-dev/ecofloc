@@ -1,0 +1,15 @@
+{
+  "measurement_interval": 0,
+  "sampling_time": 100,
+  "app_name": "test",
+  "modules": {
+    "cpu": true,
+    "ram": false,
+    "nic": false,
+    "disk": false
+  },
+  "outputs": {
+    "csv": true,
+    "mqtt": true
+  }
+}

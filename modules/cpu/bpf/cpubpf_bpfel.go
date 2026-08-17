@@ -8,8 +8,39 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
+)
+
+type cpuBPFCpuPidKey struct {
+	_   structs.HostLayout
+	Cpu uint32
+	Pid uint32
+}
+
+type cpuBPFCpuTimeConsumed struct {
+	_  structs.HostLayout
+	Ns uint64
+}
+
+type cpuBPFPidKey struct {
+	_   structs.HostLayout
+	Pid uint32
+}
+
+type cpuBPFPidStartTime struct {
+	_       structs.HostLayout
+	StartNs uint64
+}
+
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	cpuBPFMapCpuPidStart        = "cpu_pid_start"
+	cpuBPFMapCpuTimeNs          = "cpu_time_ns"
+	cpuBPFProgHandleSchedSwitch = "handle_sched_switch"
 )
 
 // loadCpuBPF returns the embedded CollectionSpec for cpuBPF.
@@ -54,12 +85,15 @@ type cpuBPFSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type cpuBPFProgramSpecs struct {
+	HandleSchedSwitch *ebpf.ProgramSpec `ebpf:"handle_sched_switch"`
 }
 
 // cpuBPFMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type cpuBPFMapSpecs struct {
+	CpuPidStart *ebpf.MapSpec `ebpf:"cpu_pid_start"`
+	CpuTimeNs   *ebpf.MapSpec `ebpf:"cpu_time_ns"`
 }
 
 // cpuBPFVariableSpecs contains global variables before they are loaded into the kernel.
@@ -88,10 +122,15 @@ func (o *cpuBPFObjects) Close() error {
 //
 // It can be passed to loadCpuBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type cpuBPFMaps struct {
+	CpuPidStart *ebpf.Map `ebpf:"cpu_pid_start"`
+	CpuTimeNs   *ebpf.Map `ebpf:"cpu_time_ns"`
 }
 
 func (m *cpuBPFMaps) Close() error {
-	return _CpuBPFClose()
+	return _CpuBPFClose(
+		m.CpuPidStart,
+		m.CpuTimeNs,
+	)
 }
 
 // cpuBPFVariables contains all global variables after they have been loaded into the kernel.
@@ -104,10 +143,13 @@ type cpuBPFVariables struct {
 //
 // It can be passed to loadCpuBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type cpuBPFPrograms struct {
+	HandleSchedSwitch *ebpf.Program `ebpf:"handle_sched_switch"`
 }
 
 func (p *cpuBPFPrograms) Close() error {
-	return _CpuBPFClose()
+	return _CpuBPFClose(
+		p.HandleSchedSwitch,
+	)
 }
 
 func _CpuBPFClose(closers ...io.Closer) error {
