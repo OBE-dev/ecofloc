@@ -4,6 +4,7 @@ import (
 	"context"
 	"ecofloc/core"
 	"ecofloc/outputs/csvfile"
+	"ecofloc/outputs/mqtt"
 	"flag"
 	"fmt"
 	"os"
@@ -187,6 +188,13 @@ func InstantiateOutputs(cfg core.Config) ([]core.Output, error) {
 		}
 		outputs = append(outputs, csv)
 	}
+	if cfg.Outputs["mqtt"] {
+		mqtt, err := mqtt.New()
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, mqtt)
+	}	
 	if len(outputs) == 0 {
 		fmt.Fprintln(os.Stderr, "warning: no output enabled; samples will be discarded")
 	}

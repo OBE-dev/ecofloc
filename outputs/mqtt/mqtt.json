@@ -1,0 +1,7 @@
+{
+  "broker": "tcp://localhost:1883",
+  "topic": "ecofloc",
+  "client_id": "ecofloc",
+  "username": "",
+  "password": ""
+}
