@@ -31,9 +31,9 @@ type CPU struct {
 	lastReadTime time.Time     // time of the last read
 }
 
-// init function will be called when the cpu package is imported
+// init function will be called when the cpu package is imported, before the main function
 func init() {
-	core.Register("cpu", CPUCreator)
+	core.RegisterModule("cpu", CPUCreator)
 }
 
 // CPUCreator creates a new CPU module instance

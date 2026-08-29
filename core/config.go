@@ -27,6 +27,14 @@ type Config struct {
 	Outputs map[string]bool `json:"outputs"`
 }
 
+var DefaultConfig = Config{
+	SamplingTime: 1000, // 1 second
+	Interval:     0,    // run until cancelled
+	PID:          0,    // system-wide monitoring
+	AppName:      "", 
+	Modules:      make(map[string]bool), // empty by default
+	Outputs:      make(map[string]bool), // empty by default
+}
 
 func (c *Config) LoadConfigFile(path string) error {
 	// Read the system configuration file
@@ -79,7 +87,7 @@ func (c Config) Validate() error {
 	}
 
 	if noModuleEnabled {
-		return fmt.Errorf("no module enabled: pass --cpu/--ram/... or set them in the config file")
+		return fmt.Errorf("no module enabled: pass a module in the command line or set it in the config file")
 	}
 	return nil
 }

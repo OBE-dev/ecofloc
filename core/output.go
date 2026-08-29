@@ -9,3 +9,6 @@ type Output interface {
 	// Close and releases any resources held by the output module.
 	Close() error
 }
+
+// OutputCreator creates an output instance based on the given configuration
+type OutputCreator func(cfg Config) (Output, error)

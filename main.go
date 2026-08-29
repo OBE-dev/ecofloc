@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"ecofloc/core"
-	"ecofloc/outputs/csvfile"
-	"ecofloc/outputs/mqtt"
 	"flag"
 	"fmt"
 	"os"
@@ -15,13 +13,11 @@ import (
 
 	//each module must be imported to be registered inside its init() function
 	_ "ecofloc/modules/cpu"
+
+	//each output must be imported to be registered inside its init() function
+	_ "ecofloc/outputs/csvfile"
+	_ "ecofloc/outputs/mqtt"
 )
-
-//list of supported modules
-var SupportedModules = []string{"cpu", "ram", "disk", "nic", "gpu", "rapl"}
-// list of supported outputs
-var SupportedOutputs = []string{"csv", "mqtt"}
-
 
 func main() {
 	if err := run(); err != nil {
@@ -31,34 +27,37 @@ func main() {
 }
 
 func run() error {
+	// Modules and Outputs are auto-registred at init time before the main function is called
+	// We can then get the list of registered modules and outputs
+	moduleRegistry := core.GetModuleRegistry()
+	outputRegistry := core.GetOutputRegistry()
+	
+	// Get the names of the registered modules
+	registeredModules := moduleRegistry.Names()
 
 	// Initialize flag set for the ecofloc command
 	fs := flag.NewFlagSet("ecofloc", flag.ContinueOnError)
 	// Add a custom usage function
-	fs.Usage = EcoflocUsage(fs)
+	fs.Usage = EcoflocUsage(fs, registeredModules)
 
-	// Register a flag for each supported module and for the other parameters
-	for _, module := range SupportedModules {
+	// Register a flag for each registered module and for the other parameters and apply a default value
+	for _, module := range registeredModules {
 		fs.Bool(module, false, fmt.Sprintf("enable the %s module", module))
 	}
-	interval     := fs.Int("t", 0, "total measurement duration in seconds (0 = unlimited)")
-	samplingTime := fs.Int("i", 0, "sampling period in milliseconds")
-	pid          := fs.Int("p", 0, "restrict measurement to this process PID (0 = system-wide)")
-	appName      := fs.String("n", "", "restrict measurement to a process selected by name")
-	outputs      := fs.String("o", "", "output modules (comma-separated): csv,mqtt...")
-	configPath   := fs.String("c", "", "path to a system.json configuration file")
-	
+	interval 		:= fs.Int("t", 0, "total measurement duration in seconds (0 = unlimited)")
+	samplingTime	:= fs.Int("i", 0, "sampling period in milliseconds")
+	pid 			:= fs.Int("p", 0, "restrict measurement to this process PID (0 = system-wide)")
+	appName 		:= fs.String("n", "", "restrict measurement to a process selected by name")
+	outputs 		:= fs.String("o", "", "output modules (comma-separated): csv,mqtt...")
+	configPath 		:= fs.String("c", "", "path to a system.json configuration file")
+
 	// Parse the ecofloc command line arguments (jump over the command name)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err // if the parsed arguments do not match the defined flags, return an error
 	}
 
-	// Init empty configuration
-	config := core.Config{
-		Modules: make(map[string]bool),
-		Outputs: make(map[string]bool),
-		//other parameters are automatically set to their zero/false/empty values
-	}
+	// Start with default configuration
+	config := core.DefaultConfig
 
 	// If a configuration file is provided, load it as default values
 	if *configPath != "" {
@@ -72,24 +71,26 @@ func run() error {
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	// Modules
-	for _, module := range SupportedModules {
+	for _, module := range registeredModules {
 		if set[module] {
 			config.Modules[module] = true
 		}
 	}
 	// Outputs
+	// Get the names of the registered outputs
+	registeredOutputs := outputRegistry.Names()
 	if set["o"] {
 		enabledOutputs := strings.Split(*outputs, ",") // outputs is a comma-separated list of enabled outputs
-		// first disable all outputs (override configuration file)
-		for _, output := range SupportedOutputs {
+		// first disable all registered outputs (override configuration file)
+		for _, output := range registeredOutputs {
 			config.Outputs[output] = false
 		}
-		// then enable the specified outputs (if it's supported)
-		for _, enabled := range enabledOutputs {
-			if !slices.Contains(SupportedOutputs, enabled) {
-				return fmt.Errorf("unsupported output: %s", enabled)
+		// then enable the specified outputs
+		for _, enabledOutput := range enabledOutputs {
+			if !slices.Contains(registeredOutputs, enabledOutput) {
+				return fmt.Errorf("unsupported output: %s", enabledOutput)
 			}
-			config.Outputs[enabled] = true
+			config.Outputs[enabledOutput] = true
 		}
 	}
 	// interval
@@ -127,28 +128,28 @@ func run() error {
 		return err
 	}
 
-	// Get the global modules registry instance where all modules are/to be registered
-	registry := core.GetRegistry()
-
-	// Activate all the enabled modules
-	missing, err := registry.ActivateEnabledModules(config)
+	// Instantiate the enabled modules
+	activeModules, err := moduleRegistry.InstantiateEnabledModules(config)
 	if err != nil {
 		return err
 	}
-	if len(missing) > 0 {
-		fmt.Fprintf(os.Stderr,
-			"warning: no implementation registered for enabled module(s): %s\n",
-			strings.Join(missing, ", "))
+	if len(activeModules) == 0 {
+		// print an error and exit
+		return fmt.Errorf("no modules enabled")
 	}
 
 	// Instantiate the outputs selected in the configuration.
-	outputModules, err := InstantiateOutputs(config)
+	activeOutputs, err := outputRegistry.InstantiateEnabledOutputs(config)
 	if err != nil {
 		return err
 	}
+	if len(activeOutputs) == 0 {
+		// print a warning and continue, the final measurement will be shown in the console
+		fmt.Fprintln(os.Stderr, "warning: no output enabled")
+	}
 
 	// Create an aggregator with the instantiated outputs
-	aggregator := core.NewAggregator(outputModules...)
+	aggregator := core.NewAggregator(activeOutputs...)
 	defer aggregator.Close()
 
 	// Create a context that will be cancelled when the program is interrupted (Ctrl-C / SIGTERM)
@@ -156,47 +157,27 @@ func run() error {
 	defer stop()
 
 	// Instantiate the engine with the configuration, active modules, and aggregator
-	engine := core.NewEngine(config, registry.Active(), aggregator)
+	engine := core.NewEngine(config, activeModules, aggregator)
 
 	// The engine runs in a loop until the context is cancelled or the measurement duration elapses
 	return engine.Run(ctx)
 }
 
 // EcoflocUsage adds a custom usage text over the default flag usage
-func EcoflocUsage(fs *flag.FlagSet) func() {
+func EcoflocUsage(fs *flag.FlagSet, modules []string) func() {
 	return func() {
-		fmt.Fprintf(os.Stderr, `ecofloc — per-process energy measurement
+		moduleFlags := make([]string, len(modules))
+		for i, m := range modules {
+			moduleFlags[i] = "--" + m
+		}
+		fmt.Fprintf(os.Stderr, `ecofloc — Energy Measuring System Tool
 
 Usage:
-  ecofloc [--cpu] [--ram] [--disk] [--nic] [--gpu] [--rapl] [-t s] [-i ms] [-p pid | -n name] [-o outputs]
+  ecofloc [%s] [-t s] [-i ms] [-p pid | -n name] [-o outputs]
   ecofloc -c /path/to/system.json [flag overrides...]
 
 Flags:
-`)
+`, strings.Join(moduleFlags, " "))
 		fs.PrintDefaults() //default flag usage
 	}
-}
-
-
-// Instantiate the outputs enabled in the configuration.
-func InstantiateOutputs(cfg core.Config) ([]core.Output, error) {
-	var outputs []core.Output
-	if cfg.Outputs["csv"] {
-		csv, err := csvfile.New()
-		if err != nil {
-			return nil, err
-		}
-		outputs = append(outputs, csv)
-	}
-	if cfg.Outputs["mqtt"] {
-		mqtt, err := mqtt.New()
-		if err != nil {
-			return nil, err
-		}
-		outputs = append(outputs, mqtt)
-	}	
-	if len(outputs) == 0 {
-		fmt.Fprintln(os.Stderr, "warning: no output enabled; samples will be discarded")
-	}
-	return outputs, nil
 }
