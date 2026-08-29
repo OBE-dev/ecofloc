@@ -3,9 +3,10 @@
 package mqtt
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -13,8 +14,10 @@ import (
 	"ecofloc/core"
 )
 
-//go:embed mqtt.json
-var configJSON []byte
+type MQTTOutput struct {
+	cfg    Config
+	client mqtt.Client
+}
 
 // Config holds the MQTT output settings, loaded from mqtt.json.
 type Config struct {
@@ -25,33 +28,19 @@ type Config struct {
 	Password string `json:"password"`
 }
 
-// LoadConfig parses the embedded mqtt.json.
-func LoadConfig() (Config, error) {
-	var c Config
-	if err := json.Unmarshal(configJSON, &c); err != nil {
-		return c, fmt.Errorf("mqtt: parsing mqtt.json: %w", err)
-	}
-	// Set default values if not specified
-	if c.Broker == "" {
-		c.Broker = "tcp://localhost:1883"
-	}
-	if c.Topic == "" {
-		c.Topic = "ecofloc"
-	}
-	if c.ClientID == "" {
-		c.ClientID = "ecofloc"
-	}
-	return c, nil
+var defaultConfig = Config{
+	Broker:  	"tcp://localhost:1883",
+	Topic:  	"ecofloc",
+	ClientID:	"ecofloc",
 }
 
-type Output struct {
-	cfg    Config
-	client mqtt.Client
+// init function will be called when the mqtt package is imported, before the main function
+func init() {
+	core.RegisterOutput("mqtt", MQTTCreator)
 }
 
-// New instanciate an MQTT output using the settings from mqtt.json and connects to
-// the MQTT broker
-func New() (*Output, error) {
+// MQTTCreator creates a new MQTT output instance.
+func MQTTCreator(_ core.Config) (core.Output, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
@@ -83,14 +72,55 @@ func New() (*Output, error) {
 	}
 
 	//connection established
-	return &Output{cfg: cfg, client: client}, nil
+	return &MQTTOutput{cfg: cfg, client: client}, nil
 }
 
-// Name implements core.Output.
-func (o *Output) Name() string { return "mqtt" }
+// configPath returns the path of the mqtt.json which should be placed in the same directory as the executable
+func configPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("mqtt: locating executable: %w", err)
+	}
+	return filepath.Join(filepath.Dir(exe), "mqtt.json"), nil
+}
+
+// LoadConfig parses mqtt.json
+// If the file cannot be read or parsed, a warning is printed and the default
+// configuration is returned.
+func LoadConfig() (Config, error) {
+	c := defaultConfig
+	path, err := configPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: mqtt: locating config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: mqtt: reading config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	if err := json.Unmarshal(data, &c); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: mqtt: parsing config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	// Set default values if not specified
+	if c.Broker == "" {
+		c.Broker = defaultConfig.Broker
+	}
+	if c.Topic == "" {
+		c.Topic = defaultConfig.Topic
+	}
+	if c.ClientID == "" {
+		c.ClientID = defaultConfig.ClientID
+	}
+	return c, nil
+}
+
+// returns the name of the output.
+func (o *MQTTOutput) Name() string { return "mqtt" }
 
 // Write publishes the batch of samples as a JSON payload to the configured topic.
-func (o *Output) Write(samples []core.Sample) error {
+func (o *MQTTOutput) Write(samples []core.Sample) error {
 	payload, err := json.Marshal(samples)
 	if err != nil {
 		return err
@@ -106,7 +136,7 @@ func (o *Output) Write(samples []core.Sample) error {
 }
 
 // Close disconnects from the broker.
-func (o *Output) Close() error {
+func (o *MQTTOutput) Close() error {
 	if o.client != nil && o.client.IsConnected() {
 		// disconnect from the broker with a timeout for pending operations
 		o.client.Disconnect(200)

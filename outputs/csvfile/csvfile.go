@@ -3,47 +3,15 @@ package csvfile
 
 import (
 	"ecofloc/core"
-	_ "embed"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
 )
-
-//go:embed csvfile.json
-var configJSON []byte
-
-var defaultConfig = Config{
-	Path:   "ecofloc_metrics.csv",
-	Append: false,
-}
-
-// the csv output comfiguration loaded from csv.json.
-type Config struct {
-	// Path of the csv file to be created
-	Path string `json:"path"`
-	// Append opens the file in append mode instead of truncating it; the
-	// header is only written when the file is newly created.
-	Append bool `json:"append"`
-}
-
-// LoadConfig parses the embedded csv.json.
-func LoadConfig() (Config, error) {
-	var c Config
-	if err := json.Unmarshal(configJSON, &c); err != nil {
-		return c, fmt.Errorf("csv: parsing csv.json: %w", err)
-	}
-	if c.Path == "" {
-		c.Path = defaultConfig.Path
-	}
-	if c.Append == false {
-		c.Append = defaultConfig.Append
-	}
-	return c, nil
-}
 
 type CSVOutput struct {
 	mu     sync.Mutex
@@ -52,15 +20,34 @@ type CSVOutput struct {
 	header bool
 }
 
-// New instantiates a CSV output using the settings from csv.json.
-func New() (*CSVOutput, error) {
+// the csv output comfiguration loaded from csvfile.json.
+type Config struct {
+	// Path of the csv file to be created
+	Path string `json:"path"`
+	// Append opens the file in append mode instead of truncating it; the
+	// header is only written when the file is newly created.
+	Append bool `json:"append"`
+}
+
+var defaultConfig = Config{
+	Path:   "ecofloc_metrics.csv",
+	Append: false,
+}
+
+// init function will be called when the csvfile package is imported, before the main function
+func init() {
+	core.RegisterOutput("csv", CSVCreator)
+}
+
+// CSVCreator creates a new CSV output instance.
+func CSVCreator(_ core.Config) (core.Output, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		f *os.File
+		f          *os.File
 		needHeader bool
 	)
 	if cfg.Append {
@@ -90,7 +77,45 @@ func New() (*CSVOutput, error) {
 	return o, o.w.Error()
 }
 
-// Name implements core.Output.
+// configPath returns the path of the csvfile.json which should be placed in the same directory as the executable
+func configPath() (string, error) {
+	// Get the directory of the current executable
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("csv: locating executable: %w", err)
+	}
+	return filepath.Join(filepath.Dir(exe), "csvfile.json"), nil
+}
+
+// LoadConfig parses csvfile.json
+// If the file cannot be read or parsed, a warning is printed and the default
+// configuration is returned.
+func LoadConfig() (Config, error) {
+	c := defaultConfig
+	path, err := configPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: csv: locating config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: csv: reading config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	if err := json.Unmarshal(data, &c); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: csv: parsing config file:", err, "- using default configuration")
+		return defaultConfig, nil
+	}
+	if c.Path == "" {
+		c.Path = defaultConfig.Path
+	}
+	if !c.Append {
+		c.Append = defaultConfig.Append
+	}
+	return c, nil
+}
+
+// returns the name of the output.
 func (o *CSVOutput) Name() string { return "csv" }
 
 // Write appends the samples to the CSV file.
