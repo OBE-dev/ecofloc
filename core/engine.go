@@ -25,11 +25,23 @@ func NewEngine(cfg Config, modules []Module, agg *Aggregator) *Engine {
 // once it is reached; otherwise it runs until the context is cancelled.
 func (e *Engine) Run(ctx context.Context) error {
 	// Start all active modules
-	for _, m := range e.modules {
-		if err := m.Start(); err != nil {
-			return err
-		}
-	}
+    var started []Module
+    for _, m := range e.modules {
+        if err := m.Start(); err != nil {
+            return err
+        }
+        started = append(started, m)
+    }
+	
+	// Define a cleanup function to be executed when Run returns
+    defer func() {
+		// Stop all started modules
+        for _, m := range started {
+            if err := m.Stop(); err != nil {
+                log.Printf("engine: stopping module %q: %v", m.Name(), err)
+            }
+        }
+    }()
 
 	// Create a ticker for the sampling cadence
 	samplingTicker := time.NewTicker(e.cfg.SamplingCadence())

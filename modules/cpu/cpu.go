@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"time"
 )
@@ -158,6 +159,19 @@ func (c *CPU) Stop() error {
 	if c.loader == nil {
 		return nil
 	}
+	// We use the last read map to get the total CPU time
+	var total uint64
+	if c.config.PID > 0 { 
+		// Specific PID measurement
+		total = c.lastReadMap[uint32(c.config.PID)]
+	} else { 
+		// System-wide measurement
+		for _, v := range c.lastReadMap {
+			total += v
+		}
+	}
+	fmt.Fprintf(os.Stderr, "CPU: total measured CPU time: %d ns\n", total)
+	// Close the eBPF loader
 	err := c.loader.Close()
 	c.loader = nil
 	return err
