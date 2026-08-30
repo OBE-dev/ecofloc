@@ -13,12 +13,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type cpuBPFCpuPidKey struct {
-	_   structs.HostLayout
-	Cpu uint32
-	Pid uint32
-}
-
 type cpuBPFCpuTimeConsumed struct {
 	_  structs.HostLayout
 	Ns uint64
@@ -41,6 +35,7 @@ const (
 	cpuBPFMapCpuPidStart        = "cpu_pid_start"
 	cpuBPFMapCpuTimeNs          = "cpu_time_ns"
 	cpuBPFProgHandleSchedSwitch = "handle_sched_switch"
+	cpuBPFVarTargetTgid         = "target_tgid"
 )
 
 // loadCpuBPF returns the embedded CollectionSpec for cpuBPF.
@@ -100,6 +95,7 @@ type cpuBPFMapSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type cpuBPFVariableSpecs struct {
+	TargetTgid *ebpf.VariableSpec `ebpf:"target_tgid"`
 }
 
 // cpuBPFObjects contains all objects after they have been loaded into the kernel.
@@ -137,6 +133,7 @@ func (m *cpuBPFMaps) Close() error {
 //
 // It can be passed to loadCpuBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type cpuBPFVariables struct {
+	TargetTgid *ebpf.Variable `ebpf:"target_tgid"`
 }
 
 // cpuBPFPrograms contains all programs after they have been loaded into the kernel.

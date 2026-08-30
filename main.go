@@ -44,12 +44,12 @@ func run() error {
 	for _, module := range registeredModules {
 		fs.Bool(module, false, fmt.Sprintf("enable the %s module", module))
 	}
-	interval 		:= fs.Int("t", 0, "total measurement duration in seconds (0 = unlimited)")
-	samplingTime	:= fs.Int("i", 0, "sampling period in milliseconds")
-	pid 			:= fs.Int("p", 0, "restrict measurement to this process PID (0 = system-wide)")
-	appName 		:= fs.String("n", "", "restrict measurement to a process selected by name")
-	outputs 		:= fs.String("o", "", "output modules (comma-separated): csv,mqtt...")
-	configPath 		:= fs.String("c", "", "path to a system.json configuration file")
+	interval := fs.Int("t", 0, "total measurement duration in seconds (0 = unlimited)")
+	samplingTime := fs.Int("i", 0, "sampling period in milliseconds")
+	pid := fs.Int("p", 0, "restrict measurement to this process PID (0 = system-wide)")
+	appName := fs.String("n", "", "restrict measurement to a process selected by name")
+	outputs := fs.String("o", "", "output modules (comma-separated): csv,mqtt...")
+	configPath := fs.String("c", "", "path to a system.json configuration file")
 
 	// Parse the ecofloc command line arguments (jump over the command name)
 	if err := fs.Parse(os.Args[1:]); err != nil {

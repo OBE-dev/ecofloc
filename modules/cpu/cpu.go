@@ -66,7 +66,7 @@ func (c *CPU) Name() string { return "cpu" }
 
 // Start loads the eBPF program and initializes the last read map/time as a baseline
 func (c *CPU) Start() error {
-	l, err := cpubpf.NewLoader()
+	l, err := cpubpf.NewLoader(uint32(c.config.PID))
 	if err != nil {
 		return fmt.Errorf("cpu: %w", err)
 	}
@@ -115,7 +115,7 @@ func (c *CPU) Measure() ([]core.Sample, error) {
 
 	var samples []core.Sample
 	if c.config.PID > 0 {
-		// Single-process measurement.
+		// Single-process measurement: epbf already sum the consumed CPU time for all threads of the target TGID
 		if actualCPUTime, exists := actualReadMap[uint32(c.config.PID)]; exists {
 			samples = append(samples, c.sample(c.config.PID, delta(uint32(c.config.PID), actualCPUTime), elapsedtime, now))
 		}
