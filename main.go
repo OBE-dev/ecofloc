@@ -27,18 +27,20 @@ func main() {
 }
 
 func run() error {
-	// Modules and Outputs are auto-registred at init time before the main function is called
-	// We can then get the list of registered modules and outputs
+	// Modules, Methods and Outputs are auto-registred at init time before the main function is called
+	// We can then get the list of registered modules, methods and outputs
 	moduleRegistry := core.GetModuleRegistry()
+	methodRegistry := core.GetMethodRegistry()
 	outputRegistry := core.GetOutputRegistry()
-	
+
+
 	// Get the names of the registered modules
 	registeredModules := moduleRegistry.Names()
 
 	// Initialize flag set for the ecofloc command
 	fs := flag.NewFlagSet("ecofloc", flag.ContinueOnError)
 	// Add a custom usage function
-	fs.Usage = EcoflocUsage(fs, registeredModules)
+	fs.Usage = EcoflocUsage(fs, registeredModules, methodRegistry)
 
 	// Register a flag for each registered module and for the other parameters and apply a default value
 	for _, module := range registeredModules {
@@ -49,6 +51,7 @@ func run() error {
 	pid := fs.Int("p", 0, "restrict measurement to this process PID (0 = system-wide)")
 	appName := fs.String("n", "", "restrict measurement to a process selected by name")
 	outputs := fs.String("o", "", "output modules (comma-separated): csv,mqtt...")
+	methods := fs.String("m", "", "measurement method per module (comma-separated): cpu:rapl,ram:standard...")
 	configPath := fs.String("c", "", "path to a system.json configuration file")
 
 	// Parse the ecofloc command line arguments (jump over the command name)
@@ -91,6 +94,23 @@ func run() error {
 				return fmt.Errorf("unsupported output: %s", enabledOutput)
 			}
 			config.Outputs[enabledOutput] = true
+		}
+	}
+	// Measurement methods
+	if set["m"] {
+		// Parse the passed methods arguments into a map[module]method
+		methodMap, err := core.ParseMethodPairs(*methods)
+		if err != nil {
+			return err
+		}
+		for module, method := range methodMap {
+			// Get the names of the registred methods for this module
+			registeredMethods := methodRegistry.Names(module)
+			// Check if the selected method is supported for this module
+			if !slices.Contains(registeredMethods, method) {
+				return fmt.Errorf("unsupported method: %s for module: %s", method, module)
+			}
+			config.MeasurementMethods[module] = method
 		}
 	}
 	// interval
@@ -164,7 +184,7 @@ func run() error {
 }
 
 // EcoflocUsage adds a custom usage text over the default flag usage
-func EcoflocUsage(fs *flag.FlagSet, modules []string) func() {
+func EcoflocUsage(fs *flag.FlagSet, modules []string, methodRegistry *core.MethodRegistry) func() {
 	return func() {
 		moduleFlags := make([]string, len(modules))
 		for i, m := range modules {
@@ -173,11 +193,21 @@ func EcoflocUsage(fs *flag.FlagSet, modules []string) func() {
 		fmt.Fprintf(os.Stderr, `ecofloc — Energy Measuring System Tool
 
 Usage:
-  ecofloc [%s] [-t s] [-i ms] [-p pid | -n name] [-o outputs]
+  ecofloc [%s] [-t s] [-i ms] [-p pid | -n name] [-o outputs] [-m methods]
   ecofloc -c /path/to/system.json [flag overrides...]
 
 Flags:
 `, strings.Join(moduleFlags, " "))
 		fs.PrintDefaults() //default flag usage
+
+		fmt.Fprintln(os.Stderr, "\nMeasurement methods per module:")
+		for _, module := range modules {
+			methodNames := methodRegistry.Names(module)
+			if len(methodNames) == 0 {
+				fmt.Fprintf(os.Stderr, "  %s: (no measurement method available)\n", module)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", module, strings.Join(methodNames, ", "))
+		}
 	}
 }

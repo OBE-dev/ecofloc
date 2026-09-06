@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -23,17 +24,20 @@ type Config struct {
 	AppName string `json:"app_name"`
 	// list of supported modules, true if enabled, false if disabled (all disabled by default)
 	Modules map[string]bool `json:"modules"`
+	// list of the selected measurement method for each module
+	MeasurementMethods map[string]string `json:"measurement_methods"`
 	// list of supported outputs, true if enabled, false if disabled (all disabled by default)
 	Outputs map[string]bool `json:"outputs"`
 }
 
 var DefaultConfig = Config{
-	SamplingTime: 1000, // 1 second
-	Interval:     0,    // run until cancelled
-	PID:          0,    // system-wide monitoring
-	AppName:      "", 
-	Modules:      make(map[string]bool), // empty by default
-	Outputs:      make(map[string]bool), // empty by default
+	SamplingTime:       1000, // 1 second
+	Interval:           0,    // run until cancelled
+	PID:                0,    // system-wide monitoring
+	AppName:            "",
+	MeasurementMethods: make(map[string]string),
+	Modules:            make(map[string]bool), // empty by default
+	Outputs:            make(map[string]bool), // empty by default
 }
 
 func (c *Config) LoadConfigFile(path string) error {
@@ -112,4 +116,27 @@ func (c *Config) ResolveTarget() error {
 	}
 	// System-wide monitoring.
 	return nil
+}
+
+// ParseMethodPairs parses a comma-separated list of "module:method" pairs.
+func ParseMethodPairs(s string) (map[string]string, error) {
+	out := make(map[string]string)
+	parts := strings.Split(s, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !strings.Contains(p, ":") {
+			return nil, fmt.Errorf("invalid -m value %q (expected module:method)", p)
+		}
+		kv := strings.SplitN(p, ":", 2)
+		module := strings.TrimSpace(kv[0])
+		method := strings.TrimSpace(kv[1])
+		if module == "" || method == "" {
+			return nil, fmt.Errorf("invalid -m value %q (module and method must not be empty)", p)
+		}
+		out[module] = method
+	}
+	return out, nil
 }

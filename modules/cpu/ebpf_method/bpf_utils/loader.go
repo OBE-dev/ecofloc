@@ -1,9 +1,9 @@
-package cpubpf
+package ebpf
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags -I../../../include/bpf -target bpfel cpuBPF cpu_bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags -I../../../../include/bpf -target bpfel kernelBPF kernel_bpf.c
 
-// The line above compiles cpu_bpf.c with clang and generates
-// the cpubpf_bpfel.o object file and the cpubpf_bpfel.go binding
+// The line above compiles kernel_bpf.c with clang and generates
+// the kernel_bpfel.o object file and the kernel_bpfel.go binding
 // This will be executed when running go generate.
 
 import (
@@ -17,7 +17,7 @@ import (
 
 // Loader owns the eBPF objects and the tracepoint attachment for the CPU probe.
 type Loader struct {
-	objs       cpuBPFObjects
+	objs       kernelBPFObjects
 	tp         link.Link
 	targetTgid uint32 // TGID to monitor; 0 means system-wide monitoring
 }
@@ -32,9 +32,9 @@ func NewLoader(tgid uint32) (*Loader, error) {
 		return nil, fmt.Errorf("removing memlock rlimit: %w", err)
 	}
 
-	var objs cpuBPFObjects
+	var objs kernelBPFObjects
 	// Load the eBPF objects into the kernel
-	if err := loadCpuBPFObjects(&objs, nil); err != nil {
+	if err := loadKernelBPFObjects(&objs, nil); err != nil {
 		return nil, fmt.Errorf("loading eBPF objects: %w", err)
 	}
 
@@ -61,7 +61,7 @@ func (l *Loader) Read() (map[uint32]uint64, error) {
 
 	// If a specific TGID is set, return only that TGID's metrics
 	if l.targetTgid != 0 {
-		var val cpuBPFCpuTimeConsumed
+		var val kernelBPFCpuTimeConsumed
 		//fetch cputime comsumed by the target TGID
 		if err := l.objs.CpuTimeNs.Lookup(l.targetTgid, &val); err != nil {
 			if errors.Is(err, ebpf.ErrKeyNotExist) {
@@ -77,7 +77,7 @@ func (l *Loader) Read() (map[uint32]uint64, error) {
 	// If no specific TGID is set, return all processes' metrics
 	var (
 		key uint32
-		val cpuBPFCpuTimeConsumed
+		val kernelBPFCpuTimeConsumed
 	)
 	// Iterate over all cpu_time_ns entries for all registered processes
 	it := l.objs.CpuTimeNs.Iterate()
