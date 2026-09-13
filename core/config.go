@@ -24,6 +24,9 @@ type Config struct {
 	AppName string `json:"app_name"`
 	// list of supported modules, true if enabled, false if disabled (all disabled by default)
 	Modules map[string]bool `json:"modules"`
+	// ModuleFeatures carries module-specific data (e.g. the CPU features from cpu.json)
+	// It is filled by the module creator and is not part of system.json.
+	ModuleFeatures map[string]any `json:"-"`
 	// list of the selected measurement method for each module
 	MeasurementMethods map[string]string `json:"measurement_methods"`
 	// list of supported outputs, true if enabled, false if disabled (all disabled by default)

@@ -2,30 +2,27 @@ package cpu
 
 import (
 	"ecofloc/core"
-	_ "embed"
+	"ecofloc/modules/cpu/cpufeatures"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	// blank imports trigger init() registration of each method
 	_ "ecofloc/modules/cpu/ebpf_method"
+	_ "ecofloc/modules/cpu/rapl_method"
 )
 
-// the cpu.json is a built-in configuration for the CPU module (embedded during build)
-//
-//go:embed cpu.json
-var configJSON []byte
-
-// CpuFeatures holds the CPU features read from cpu.json.
-type CpuFeatures struct {
-	FreqTDP    float64 `json:"cpu_freq_tdp"`
-	TDP        float64 `json:"cpu_tdp"`
-	VoltageTDP float64 `json:"cpu_voltage_tdp"`
+type CPU struct {
+	config core.Config // system configuration
+	method core.Method // CPU measurement method
 }
 
-type CPU struct {
-	config   core.Config // system configuration
-	features CpuFeatures // CPU features
-	method   core.Method // CPU measurement method
+// defaultFeatures is used when cpu.json is missing or incomplete.
+var defaultFeatures = cpufeatures.Features{
+	FreqTDP:    2800.0,
+	TDP:        28.0,
+	VoltageTDP: 1.5,
 }
 
 // init function will be called when the cpu package is imported, before the main function
@@ -35,13 +32,13 @@ func init() {
 
 // CPUCreator creates a new CPU module instance
 func CPUCreator(cfg core.Config) (core.Module, error) {
-	feat, err := loadFeatures()
-	if err != nil {
-		return nil, err
-	}
+	// forward the CPU features (cpufeatures.Features) to the selected measurement
+	// method through the configuration
+	cfg.ModuleFeatures = map[string]any{"cpu": loadFeatures()}
+
 	methodName := cfg.MeasurementMethods["cpu"]
 	if methodName == "" {
-		methodName = "ebpf" // epbf is default if no measurement method is specified by the user
+		methodName = "metrics" // metrics is default if no measurement method is specified by the user
 	}
 
 	creator, err := core.GetMethodCreator("cpu", methodName)
@@ -49,27 +46,62 @@ func CPUCreator(cfg core.Config) (core.Module, error) {
 		return nil, err
 	}
 
-	// instantiate a the selected method measurement
+	// instantiate the selected measurement method
 	method, err := creator(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("cpu: instantiating method %q: %w", methodName, err)
 	}
+
 	return &CPU{
-		config:   cfg,
-		features: feat,
-		method:   method,
+		config: cfg,
+		method: method,
 	}, nil
 }
 
-// loadFeatures parses the embedded cpu.json and returns the cpu features
-func loadFeatures() (CpuFeatures, error) {
-	var wrapper struct {
-		Features CpuFeatures `json:"features"`
+// configPath returns the path of cpu.json, which should be placed in the same
+// directory as the executable.
+func configPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locating executable: %w", err)
 	}
-	if err := json.Unmarshal(configJSON, &wrapper); err != nil {
-		return CpuFeatures{}, fmt.Errorf("parsing cpu.json: %w", err)
+	return filepath.Join(filepath.Dir(exe), "cpu.json"), nil
+}
+
+// loadFeatures parses cpu.json. If the file cannot be read or parsed, a warning
+// is printed and the default features are returned. A missing or invalid
+// (<= 0) value falls back to its default individually.
+func loadFeatures() cpufeatures.Features {
+	path, err := configPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: cpu:", err, "- using default CPU features")
+		return defaultFeatures
 	}
-	return wrapper.Features, nil
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: cpu: reading config file:", err, "- using default CPU features")
+		return defaultFeatures
+	}
+
+	var configFile struct {
+		Features cpufeatures.Features `json:"features"`
+	}
+	if err := json.Unmarshal(data, &configFile); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: cpu: parsing config file:", err, "- using default CPU features")
+		return defaultFeatures
+	}
+
+	f := configFile.Features
+	if f.FreqTDP <= 0 {
+		f.FreqTDP = defaultFeatures.FreqTDP
+	}
+	if f.TDP <= 0 {
+		f.TDP = defaultFeatures.TDP
+	}
+	if f.VoltageTDP <= 0 {
+		f.VoltageTDP = defaultFeatures.VoltageTDP
+	}
+	return f
 }
 
 // Name returns the name of the module
@@ -79,9 +111,11 @@ func (c *CPU) Name() string { return "cpu" }
 func (c *CPU) Start() error {
 	return c.method.Start()
 }
+
 func (c *CPU) Measure() ([]core.Sample, error) {
 	return c.method.Measure()
 }
+
 func (c *CPU) Stop() error {
 	return c.method.Stop()
 }
