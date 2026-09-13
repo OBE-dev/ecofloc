@@ -7,10 +7,8 @@ package ebpf
 // This will be executed when running go generate.
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 )
@@ -23,7 +21,7 @@ type Loader struct {
 }
 
 // NewLoader loads the compiled eBPF objects into the kernel and attaches the
-// sched_switch tracepoint, and sets the target TGID to monitor inside the eBPF program.
+// sched_stat_runtime tracepoint, and sets the target TGID to monitor inside the eBPF program.
 // It must be called with sufficient privileges.
 func NewLoader(tgid uint32) (*Loader, error) {
 	// Modern kernels use the BPF memcg accounting, but removing the memlock
@@ -44,45 +42,37 @@ func NewLoader(tgid uint32) (*Loader, error) {
 		return nil, fmt.Errorf("setting target tgid: %w", err)
 	}
 
-	// Attach the sched_switch tracepoint
-	tp, err := link.Tracepoint("sched", "sched_switch", objs.HandleSchedSwitch, nil)
+	// Attach the sched_stat_runtime tracepoint
+	tp, err := link.Tracepoint("sched", "sched_stat_runtime", objs.HandleSchedStatRuntime, nil)
 	if err != nil {
 		objs.Close()
-		return nil, fmt.Errorf("attaching sched_switch tracepoint: %w", err)
+		return nil, fmt.Errorf("attaching sched_stat_runtime tracepoint: %w", err)
 	}
 
 	return &Loader{objs: objs, tp: tp, targetTgid: tgid}, nil
 }
 
-// Read returns the current cumulative CPU time in nanoseconds keyed by PID.
-// map["pid_key"] = cpu_time_consumed
+// Read returns the cumulative CPU time in nanoseconds consumed on each logical
+// CPU, keyed by CPU id: map[cpu] = ns. 
+// In targeted mode it is the time consumed by the target TGID
+// otherwise it's the time consumed by all processes.
 func (l *Loader) Read() (map[uint32]uint64, error) {
 	out := make(map[uint32]uint64)
 
-	// If a specific TGID is set, return only that TGID's metrics
-	if l.targetTgid != 0 {
-		var val kernelBPFCpuTimeConsumed
-		//fetch cputime comsumed by the target TGID
-		if err := l.objs.CpuTimeNs.Lookup(l.targetTgid, &val); err != nil {
-			if errors.Is(err, ebpf.ErrKeyNotExist) {
-				out[l.targetTgid] = 0
-				return out, nil
-			}
-			return nil, fmt.Errorf("lookup cpu_time_ns for target %d: %w", l.targetTgid, err)
-		}
-		out[l.targetTgid] = val.Ns
-		return out, nil
-	}
-
-	// If no specific TGID is set, return all processes' metrics
 	var (
-		key uint32
+		key kernelBPFCpuTimeKey
 		val kernelBPFCpuTimeConsumed
 	)
-	// Iterate over all cpu_time_ns entries for all registered processes
+
+	// we iterate over all entries in the map
+	// each entry is of from  Map[{tgid, cpu_id}] = cpu_time_ns
 	it := l.objs.CpuTimeNs.Iterate()
 	for it.Next(&key, &val) {
-		out[key] = val.Ns
+		// we only keep the entries for the target TGID
+		if key.Tgid == l.targetTgid {
+			// at the end we get a map of the cpu time consumed by each CPU
+			out[key.Cpu] = val.Ns
+		}
 	}
 	if err := it.Err(); err != nil {
 		return nil, fmt.Errorf("iterating cpu_time_ns map: %w", err)

@@ -18,24 +18,19 @@ type kernelBPFCpuTimeConsumed struct {
 	Ns uint64
 }
 
-type kernelBPFPidKey struct {
-	_   structs.HostLayout
-	Pid uint32
-}
-
-type kernelBPFPidStartTime struct {
-	_       structs.HostLayout
-	StartNs uint64
+type kernelBPFCpuTimeKey struct {
+	_    structs.HostLayout
+	Tgid uint32
+	Cpu  uint32
 }
 
 // Names of all BPF objects in the ELF.
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	kernelBPFMapCpuPidStart        = "cpu_pid_start"
-	kernelBPFMapCpuTimeNs          = "cpu_time_ns"
-	kernelBPFProgHandleSchedSwitch = "handle_sched_switch"
-	kernelBPFVarTargetTgid         = "target_tgid"
+	kernelBPFMapCpuTimeNs               = "cpu_time_ns"
+	kernelBPFProgHandleSchedStatRuntime = "handle_sched_stat_runtime"
+	kernelBPFVarTargetTgid              = "target_tgid"
 )
 
 // loadKernelBPF returns the embedded CollectionSpec for kernelBPF.
@@ -80,15 +75,14 @@ type kernelBPFSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type kernelBPFProgramSpecs struct {
-	HandleSchedSwitch *ebpf.ProgramSpec `ebpf:"handle_sched_switch"`
+	HandleSchedStatRuntime *ebpf.ProgramSpec `ebpf:"handle_sched_stat_runtime"`
 }
 
 // kernelBPFMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type kernelBPFMapSpecs struct {
-	CpuPidStart *ebpf.MapSpec `ebpf:"cpu_pid_start"`
-	CpuTimeNs   *ebpf.MapSpec `ebpf:"cpu_time_ns"`
+	CpuTimeNs *ebpf.MapSpec `ebpf:"cpu_time_ns"`
 }
 
 // kernelBPFVariableSpecs contains global variables before they are loaded into the kernel.
@@ -118,13 +112,11 @@ func (o *kernelBPFObjects) Close() error {
 //
 // It can be passed to loadKernelBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type kernelBPFMaps struct {
-	CpuPidStart *ebpf.Map `ebpf:"cpu_pid_start"`
-	CpuTimeNs   *ebpf.Map `ebpf:"cpu_time_ns"`
+	CpuTimeNs *ebpf.Map `ebpf:"cpu_time_ns"`
 }
 
 func (m *kernelBPFMaps) Close() error {
 	return _KernelBPFClose(
-		m.CpuPidStart,
 		m.CpuTimeNs,
 	)
 }
@@ -140,12 +132,12 @@ type kernelBPFVariables struct {
 //
 // It can be passed to loadKernelBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type kernelBPFPrograms struct {
-	HandleSchedSwitch *ebpf.Program `ebpf:"handle_sched_switch"`
+	HandleSchedStatRuntime *ebpf.Program `ebpf:"handle_sched_stat_runtime"`
 }
 
 func (p *kernelBPFPrograms) Close() error {
 	return _KernelBPFClose(
-		p.HandleSchedSwitch,
+		p.HandleSchedStatRuntime,
 	)
 }
 
