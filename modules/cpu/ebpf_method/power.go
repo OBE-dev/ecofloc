@@ -29,7 +29,7 @@ import (
 
 type powerModel struct {
 	features    cpufeatures.Features
-	phsicalCoreCapacitance float64
+	chipCapacitance float64
 	totalVCores int
 	realCoreOf  []int // vcore -> physical core id
 	lastPowerW  float64
@@ -44,31 +44,16 @@ func newPowerModel(feat cpufeatures.Features) (*powerModel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mapping real cores: %w", err)
 	}
-	nPhysical := countPhysicalCores(realCoreOf)
-	if nPhysical == 0 {
-		return nil, fmt.Errorf("no physical core found in /proc/cpuinfo")
-	}
 
 	chipCapacitance := (0.7 * feat.TDP) /
 		(feat.FreqTDP * feat.VoltageTDP * feat.VoltageTDP)
 
 	return &powerModel{
-		features:               feat,
-		phsicalCoreCapacitance: chipCapacitance / float64(nPhysical),
-		totalVCores:            totalVCores,
-		realCoreOf:             realCoreOf,
+		features:        feat,
+		chipCapacitance: chipCapacitance,
+		totalVCores:     totalVCores,
+		realCoreOf:      realCoreOf,
 	}, nil
-}
-
-// countPhysicalCores returns the number of distinct physical core ids.
-func countPhysicalCores(realCoreOf []int) int {
-	phyCores := make(map[int]bool)
-	for _, rc := range realCoreOf {
-		if rc >= 0 {
-			phyCores[rc] = true
-		}
-	}
-	return len(phyCores)
 }
 
 // energy returns the average power (W) and the energy (J) consumed during an
@@ -116,7 +101,7 @@ func (pm *powerModel) energy(cpuTimeNs map[uint32]uint64, elapsedSec float64) (p
 
 	// We calculate the energy consumed by every physical core
 	// Than we compute the Total enery which is the sum of all physical cores energy
-	// Total_E = Σ(E_phyC) = Σ(C_phyC * V_phyC^2 * f_phyC * runtime_phyC)
+	// Total_E = Σ(E_phyC) = Σ(C_chip * V_phyC^2 * f_phyC * runtime_phyC)
 	for _, phyC := range physicalCores {
 		if phyC.n == 0 || phyC.runTimeSec <= 0 {
 			continue
@@ -128,7 +113,7 @@ func (pm *powerModel) energy(cpuTimeNs map[uint32]uint64, elapsedSec float64) (p
 		// we compute the average voltage and frequency for this physical core
 		volt := phyC.voltSum / float64(phyC.n)
 		freq := phyC.freqSum / float64(phyC.n)
-		energyJ += pm.phsicalCoreCapacitance * volt * volt * freq * runTime
+		energyJ += pm.chipCapacitance * volt * volt * freq * runTime
 	}
 
 	powerW = energyJ / elapsedSec
