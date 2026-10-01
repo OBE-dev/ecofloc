@@ -8,8 +8,24 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
+)
+
+type nicBPFNicMetrics struct {
+	_       structs.HostLayout
+	RxBytes uint64
+	TxBytes uint64
+}
+
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	nicBPFMapNicStats        = "nic_stats"
+	nicBPFProgCgCountEgress  = "cg_count_egress"
+	nicBPFProgCgCountIngress = "cg_count_ingress"
 )
 
 // loadNicBPF returns the embedded CollectionSpec for nicBPF.
@@ -54,12 +70,15 @@ type nicBPFSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type nicBPFProgramSpecs struct {
+	CgCountEgress  *ebpf.ProgramSpec `ebpf:"cg_count_egress"`
+	CgCountIngress *ebpf.ProgramSpec `ebpf:"cg_count_ingress"`
 }
 
 // nicBPFMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type nicBPFMapSpecs struct {
+	NicStats *ebpf.MapSpec `ebpf:"nic_stats"`
 }
 
 // nicBPFVariableSpecs contains global variables before they are loaded into the kernel.
@@ -88,10 +107,13 @@ func (o *nicBPFObjects) Close() error {
 //
 // It can be passed to loadNicBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type nicBPFMaps struct {
+	NicStats *ebpf.Map `ebpf:"nic_stats"`
 }
 
 func (m *nicBPFMaps) Close() error {
-	return _NicBPFClose()
+	return _NicBPFClose(
+		m.NicStats,
+	)
 }
 
 // nicBPFVariables contains all global variables after they have been loaded into the kernel.
@@ -104,10 +126,15 @@ type nicBPFVariables struct {
 //
 // It can be passed to loadNicBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type nicBPFPrograms struct {
+	CgCountEgress  *ebpf.Program `ebpf:"cg_count_egress"`
+	CgCountIngress *ebpf.Program `ebpf:"cg_count_ingress"`
 }
 
 func (p *nicBPFPrograms) Close() error {
-	return _NicBPFClose()
+	return _NicBPFClose(
+		p.CgCountEgress,
+		p.CgCountIngress,
+	)
 }
 
 func _NicBPFClose(closers ...io.Closer) error {

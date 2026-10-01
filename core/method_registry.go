@@ -46,7 +46,7 @@ func (r *MethodRegistry) Register(moduleName, methodName string, f MethodCreator
 	r.MethodCreators[moduleName][methodName] = f
 }
  
-// GetMethodCreator returns the method creator for a specific module and method
+// GetMethodCreator returns the method creator for a specific module
 func GetMethodCreator(moduleName, methodName string) (MethodCreator, error) {
     r := globalMethodRegistry
     r.mu.RLock()

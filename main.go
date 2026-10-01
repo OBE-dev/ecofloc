@@ -13,6 +13,7 @@ import (
 
 	//each module must be imported to be registered inside its init() function
 	_ "ecofloc/modules/cpu"
+	_ "ecofloc/modules/nic"
 
 	//each output must be imported to be registered inside its init() function
 	_ "ecofloc/outputs/csvfile"
@@ -32,7 +33,6 @@ func run() error {
 	moduleRegistry := core.GetModuleRegistry()
 	methodRegistry := core.GetMethodRegistry()
 	outputRegistry := core.GetOutputRegistry()
-
 
 	// Get the names of the registered modules
 	registeredModules := moduleRegistry.Names()

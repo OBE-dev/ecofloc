@@ -1,0 +1,10 @@
+{
+  "features": {
+    "enp0s31f6": {
+      "upload_power": 1.138,
+      "download_power": 1.138,
+      "upload_max_rate": 300000,
+      "download_max_rate": 300000
+    }
+  }
+}
