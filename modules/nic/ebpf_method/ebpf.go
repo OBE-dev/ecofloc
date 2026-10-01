@@ -28,8 +28,6 @@ type ebpfMethod struct {
 	lastRead     map[string][2]uint64
 	lastReadTime time.Time
 	totalEnergyJ float64
-	totalRxBytes uint64
-	totalTxBytes uint64
 	features     nicfeatures.Features
 }
 
@@ -78,13 +76,9 @@ func (m *ebpfMethod) Measure() ([]core.Sample, error) {
 		return nil, fmt.Errorf("ebpf method: read: %w", err)
 	}
 
-	var (
-		totalPowerW  float64
-		totalRxBytes uint64
-		totalTxBytes uint64
-	)
+	var totalPowerW float64
 
-	// We count the total bytes TX/RX and total energy over all interfaces
+	// We calculate the total power over all interfaces
 	for name, counters := range current {
 		prev := m.lastRead[name]
 		// Counters are cumulative; if they decrease (e.g. map was reset), start from 0.
@@ -94,20 +88,27 @@ func (m *ebpfMethod) Measure() ([]core.Sample, error) {
 		if counters[1] < prev[1] { // TX
 			prev[1] = 0
 		}
+		// Calculate the delta for each counter
 		rxDelta := counters[0] - prev[0]
 		txDelta := counters[1] - prev[1]
-		totalRxBytes += rxDelta
-		totalTxBytes += txDelta
-
-		// TBD (for now we only measure the total bytes, not the power)
-		totalPowerW = 0
+		// Convert byte deltas over the elapsed time to get KB/s
+		uploadRateKBps := (float64(txDelta) / elapsed) / 1000
+		downloadRateKBps := (float64(rxDelta) / elapsed) / 1000
+		// get the features for this interface
+		f := m.features[name]
+		// Calculate the power for each direction
+		uploadPower := (f.UploadPower) * (uploadRateKBps / f.UploadMaxRate)
+		downloadPower := (f.DownloadPower) * (downloadRateKBps / f.DownloadMaxRate)
+		// Calculate the average power for this interface
+		avgPower := uploadPower + downloadPower
+		// Add the power for this interface to the total power
+		totalPowerW += avgPower
 	}
+	// energy over all interfaces
 	energyJ := totalPowerW * elapsed
  
-	// Update the total bytes TX/RX and energy since the start of the measurement
+	// Update the total energy since the start of the measurement
 	m.totalEnergyJ += energyJ
-	m.totalRxBytes += totalRxBytes
-	m.totalTxBytes += totalTxBytes
 	m.lastRead = current
 	m.lastReadTime = now
 
@@ -116,10 +117,8 @@ func (m *ebpfMethod) Measure() ([]core.Sample, error) {
 		PID:       m.cfg.PID,
 		Timestamp: now,
 		Metrics: map[string]float64{
-			"power_w":        totalPowerW,
-			"energy_j":       energyJ,
-			"rx_bytes_delta": float64(totalRxBytes),
-			"tx_bytes_delta": float64(totalTxBytes),
+			"power_w":  totalPowerW,
+			"energy_j": energyJ,
 		},
 	}}, nil
 }
@@ -129,7 +128,5 @@ func (m *ebpfMethod) Stop() error {
 		return nil
 	}
 	fmt.Fprintf(os.Stderr, "NIC: total measured energy: %.3f J\n", m.totalEnergyJ)
-	fmt.Fprintf(os.Stderr, "NIC: total received bytes: %d\n", m.totalRxBytes)
-	fmt.Fprintf(os.Stderr, "NIC: total sent bytes: %d\n", m.totalTxBytes)
 	return m.loader.Close()
 }
