@@ -10,10 +10,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 
+	"ecofloc/core"
 	"ecofloc/modules/nic/nicfeatures"
 
 	"github.com/cilium/ebpf"
@@ -81,7 +79,7 @@ func NewLoader(pid int, features nicfeatures.Features) (*Loader, error) {
 	}
 
 	// Per-process monitoring: create a child cgroup
-	orig, child, err := createCgroupChild(pid)
+	orig, child, err := core.CreateCgroupChild(pid)
 	if err != nil {
 		objs.Close()
 		return nil, err
@@ -91,7 +89,7 @@ func NewLoader(pid int, features nicfeatures.Features) (*Loader, error) {
 
 	// Attach the eBPF program to the child cgroup
 	if err := l.attachCgroup(child); err != nil {
-		l.cleanupChildCgroup()
+		core.CleanupChildCgroup(orig, child)
 		objs.Close()
 		return nil, fmt.Errorf("nic bpf per-tgid attach: %w", err)
 	}
@@ -202,7 +200,7 @@ func (l *Loader) Close() error {
 	}
 	// If a child cgroup was created (process monitoring case), clean it up
 	if l.childCgroup != "" {
-		l.cleanupChildCgroup()
+		core.CleanupChildCgroup(l.origCgroup, l.childCgroup)
 	}
 	// Close the eBPF objects
 	if err := l.objs.Close(); err != nil && firstErr == nil {
@@ -211,77 +209,3 @@ func (l *Loader) Close() error {
 	return firstErr
 }
 
-// createCgroupChild creates a child cgroup under the target process current cgroup
-// and moves the process into it.
-func createCgroupChild(pid int) (origCgroup, childCgroup string, err error) {
-	// Get the current cgroup path of the process
-	orig, err := getProcessCgroupPath(pid)
-	if err != nil {
-		return "", "", fmt.Errorf("finding cgroup of pid %d: %w", pid, err)
-	}
-	// Create a child cgroup under the current cgroup path
-	child := filepath.Join(orig, fmt.Sprintf("ecofloc-%d", pid))
-	if err := os.MkdirAll(child, 0755); err != nil {
-		return "", "", fmt.Errorf("creating cgroup %s: %w", child, err)
-	}
-
-	// Get the path to the cgroup.procs file inside the child cgroup folder
-	procs := filepath.Join(child, "cgroup.procs")
-
-	// By writing the pid to the cgroup.procs file, we move the process into the child cgroup we just created
-	if err := os.WriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0); err != nil {
-		_ = os.Remove(child)
-		return "", "", fmt.Errorf("moving pid %d into cgroup %s: %w", pid, child, err)
-	}
-
-	return orig, child, nil
-}
-
-// cleanupChildCgroup moves back the monitored process (and its child processes) from the created child cgroup
-// to its original cgroup and then removes the child cgroup.
-func (l *Loader) cleanupChildCgroup() {
-	if l.origCgroup == "" || l.childCgroup == "" {
-		return
-	}
-
-	// get path to cgroup.procs file of the child cgroup
-	childProcs := filepath.Join(l.childCgroup, "cgroup.procs")
-	// get path to cgroup.procs file of the original cgroup
-	origProcs := filepath.Join(l.origCgroup, "cgroup.procs")
-
-	// Move all PIDs currently in the child cgroup back to the original cgroup.
-	data, err := os.ReadFile(childProcs)
-	if err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			pid := strings.TrimSpace(line)
-			if pid == "" {
-				continue
-			}
-			// By writing the pid to the cgroup.procs file, we move the process back to the original cgroup
-			_ = os.WriteFile(origProcs, []byte(pid+"\n"), 0)
-		}
-	}
-
-	// Remove the child cgroup
-	_ = os.Remove(l.childCgroup)
-}
-
-// getProcessCgroupPath returns the absolute filesystem path of the cgroup v2 directory
-// the process belongs to.
-func getProcessCgroupPath(pid int) (string, error) {
-	// Read the cgroup file for the process (e.g: returns "0::/user.slice/user-1000.slice/session-1.scope")
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
-	if err != nil {
-		return "", err
-	}
-	// check if the cgroup path is in the cgroup2 format (0::xxx)
-	// than remove the "0::" prefix and concatenate with "/sys/fs/cgroup"
-	for _, line := range strings.Split(string(data), "\n") {
-		parts := strings.SplitN(line, "::", 2)
-		if len(parts) == 2 && parts[0] == "0" {
-			return filepath.Join("/sys/fs/cgroup", strings.TrimSpace(parts[1])), nil
-		}
-	}
-
-	return "", fmt.Errorf("cgroup v2 path not found for pid %d", pid)
-}
