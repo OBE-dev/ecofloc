@@ -1,0 +1,10 @@
+{
+  "features": {
+    "nvme1n1": {
+      "read_power": 2.0,
+      "write_power": 3.0,
+      "read_max_rate": 500000,
+      "write_max_rate": 400000
+    }
+  }
+}

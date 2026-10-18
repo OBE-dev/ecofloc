@@ -13,6 +13,7 @@ import (
 
 	//each module must be imported to be registered inside its init() function
 	_ "ecofloc/modules/cpu"
+	_ "ecofloc/modules/disk"
 	_ "ecofloc/modules/nic"
 
 	//each output must be imported to be registered inside its init() function

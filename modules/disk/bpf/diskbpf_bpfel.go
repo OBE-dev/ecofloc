@@ -8,8 +8,28 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
+)
+
+type diskBPFDiskMetrics struct {
+	_                   structs.HostLayout
+	ReadBytes           uint64
+	WriteBytes          uint64
+	CancelledWriteBytes uint64
+}
+
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	diskBPFMapDiskMap                     = "disk_map"
+	diskBPFProgHandleBlockRequestComplete = "handle_block_request_complete"
+	diskBPFProgHandleDirtyFolio           = "handle_dirty_folio"
+	diskBPFProgHandleFolioCleaned         = "handle_folio_cleaned"
+	diskBPFProgHandleSubmitBio            = "handle_submit_bio"
+	diskBPFVarTargetTgid                  = "target_tgid"
 )
 
 // loadDiskBPF returns the embedded CollectionSpec for diskBPF.
@@ -54,18 +74,24 @@ type diskBPFSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type diskBPFProgramSpecs struct {
+	HandleBlockRequestComplete *ebpf.ProgramSpec `ebpf:"handle_block_request_complete"`
+	HandleDirtyFolio           *ebpf.ProgramSpec `ebpf:"handle_dirty_folio"`
+	HandleFolioCleaned         *ebpf.ProgramSpec `ebpf:"handle_folio_cleaned"`
+	HandleSubmitBio            *ebpf.ProgramSpec `ebpf:"handle_submit_bio"`
 }
 
 // diskBPFMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type diskBPFMapSpecs struct {
+	DiskMap *ebpf.MapSpec `ebpf:"disk_map"`
 }
 
 // diskBPFVariableSpecs contains global variables before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type diskBPFVariableSpecs struct {
+	TargetTgid *ebpf.VariableSpec `ebpf:"target_tgid"`
 }
 
 // diskBPFObjects contains all objects after they have been loaded into the kernel.
@@ -88,26 +114,39 @@ func (o *diskBPFObjects) Close() error {
 //
 // It can be passed to loadDiskBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type diskBPFMaps struct {
+	DiskMap *ebpf.Map `ebpf:"disk_map"`
 }
 
 func (m *diskBPFMaps) Close() error {
-	return _DiskBPFClose()
+	return _DiskBPFClose(
+		m.DiskMap,
+	)
 }
 
 // diskBPFVariables contains all global variables after they have been loaded into the kernel.
 //
 // It can be passed to loadDiskBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type diskBPFVariables struct {
+	TargetTgid *ebpf.Variable `ebpf:"target_tgid"`
 }
 
 // diskBPFPrograms contains all programs after they have been loaded into the kernel.
 //
 // It can be passed to loadDiskBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type diskBPFPrograms struct {
+	HandleBlockRequestComplete *ebpf.Program `ebpf:"handle_block_request_complete"`
+	HandleDirtyFolio           *ebpf.Program `ebpf:"handle_dirty_folio"`
+	HandleFolioCleaned         *ebpf.Program `ebpf:"handle_folio_cleaned"`
+	HandleSubmitBio            *ebpf.Program `ebpf:"handle_submit_bio"`
 }
 
 func (p *diskBPFPrograms) Close() error {
-	return _DiskBPFClose()
+	return _DiskBPFClose(
+		p.HandleBlockRequestComplete,
+		p.HandleDirtyFolio,
+		p.HandleFolioCleaned,
+		p.HandleSubmitBio,
+	)
 }
 
 func _DiskBPFClose(closers ...io.Closer) error {
