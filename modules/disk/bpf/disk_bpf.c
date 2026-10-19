@@ -40,6 +40,11 @@ struct disk_metrics {
 	__u64 cancelled_write_bytes;
 };
 
+/* folio layout of recent kernels: _folio_nr_pages replaced by _nr_pages */
+struct folio___nr_pages {
+    unsigned int _nr_pages;
+} __attribute__((preserve_access_index));
+
 /* TGID of the process to monitor. 0 means system-wide monitoring */
 volatile __u32 target_tgid = 0;
 
@@ -137,16 +142,32 @@ static __always_inline __u32 get_mapping_disk_dev(struct address_space *mapping)
 	return get_disk_dev(sb->s_bdev);
 }
 
-/* returns the size in bytes of a folio: a folio can be a single page
-   or a group of pages (large folio), its number of pages is stored in _folio_nr_pages */
+/* returns the flags of a page or folio. flags is always the first field of
+   struct page / struct folio, it is an unsigned long or, on recent kernels,
+   a memdesc_flags_t holding a single unsigned long, so we read it at offset 0 */
+static __always_inline unsigned long read_page_flags(const void *p)
+{
+    unsigned long flags = 0;
+ 
+    bpf_probe_read_kernel(&flags, sizeof(flags), p);
+    return flags;
+}
+ 
+
+/* returns the size in bytes of a folio: a large folio holds several pages,
+   its number of pages is stored in _folio_nr_pages (or _nr_pages on recent kernels) */
 static __always_inline __u64 get_folio_bytes(struct folio *folio)
 {
-	__u64 nr_pages = 1;
-
-	/*if PG_head set, the folio contains multiple pages */
-	if ((folio->flags >> PG_head) & 1)
-		nr_pages = folio->_folio_nr_pages;
-	return nr_pages * ECOFLOC_PAGE_SIZE;
+    __u64 nr_pages = 1;
+    unsigned long flags = read_page_flags(folio);
+ 
+    if ((flags >> bpf_core_enum_value(enum pageflags, PG_head)) & 1) {
+        if (bpf_core_field_exists(folio->_folio_nr_pages))
+            nr_pages = BPF_CORE_READ(folio, _folio_nr_pages);
+        else if (bpf_core_field_exists(((struct folio___nr_pages *)folio)->_nr_pages))
+            nr_pages = BPF_CORE_READ((struct folio___nr_pages *)folio, _nr_pages);
+    }
+    return nr_pages * ECOFLOC_PAGE_SIZE;
 }
 
 /* returns 1 if the page is under writeback,
@@ -169,11 +190,10 @@ static __always_inline int page_under_writeback(struct page *page)
 	if (head & 1)
 		page = (struct page *)(head - 1);
 
-	/*flags are stored in the head page*/
-	flags = BPF_CORE_READ(page, flags);
+	flags = read_page_flags(page);
 
 	/*check if the page is under writeback*/
-	return (flags >> PG_writeback) & 1;
+	return (flags >> bpf_core_enum_value(enum pageflags, PG_writeback)) & 1;
 }
 
 /* System mode monitoring: account all the bytes completed by the disks */
