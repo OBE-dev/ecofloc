@@ -5,6 +5,7 @@
   "modules": {
     "cpu": true,
     "ram": false,
+    "gpu": false,
     "nic": false,
     "disk": false
   },
