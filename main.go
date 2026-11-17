@@ -16,6 +16,7 @@ import (
 	_ "ecofloc/modules/disk"
 	_ "ecofloc/modules/gpu"
 	_ "ecofloc/modules/nic"
+	_ "ecofloc/modules/ram"
 
 	//each output must be imported to be registered inside its init() function
 	_ "ecofloc/outputs/csvfile"
